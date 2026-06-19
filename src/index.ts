@@ -1,7 +1,29 @@
-#!/usr/bin/env node --max-old-space-size=4096
+#!/usr/bin/env node
 
 import dotenv from "dotenv";
 dotenv.config({ override: true, quiet: true });
+
+process.on("uncaughtException", (err) => {
+  console.error("[CRASH] uncaughtException:", err);
+  process.exit(1);
+});
+
+process.on("unhandledRejection", (reason) => {
+  console.error("[CRASH] unhandledRejection:", reason);
+});
+
+process.on("exit", (code) => {
+  console.error(`[EXIT] code: ${code}`);
+});
+
+setInterval(() => {
+  const m = process.memoryUsage();
+  console.error(
+    `[MEM] heap: ${Math.round(m.heapUsed / 1024 / 1024)}MB` +
+    ` / ${Math.round(m.heapTotal / 1024 / 1024)}MB` +
+    ` | rss: ${Math.round(m.rss / 1024 / 1024)}MB`
+  );
+}, 60_000);
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 
