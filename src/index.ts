@@ -26,6 +26,8 @@ setInterval(() => {
 }, 60_000);
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import { randomUUID } from "crypto";
 
 import * as dart from "./dart/index.js";
 import * as krx from "./krx/index.js";
@@ -183,10 +185,68 @@ server.tool(
   },
 );
 
-async function main() {
+async function startStdio() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error("Korea Dart MCP Server running on stdio");
+  console.error("Korea Stock MCP Server running on stdio");
+}
+
+async function startHttp() {
+  const { default: express } = await import("express");
+  const app = express();
+  app.use(express.json());
+
+  const PORT = parseInt(process.env.PORT || "8000");
+  const MCP_PATH = process.env.MCP_PATH || "/mcp";
+
+  const transports = new Map<string, StreamableHTTPServerTransport>();
+
+  const handleMcp = async (req: express.Request, res: express.Response) => {
+    const sessionId = req.headers["mcp-session-id"] as string | undefined;
+
+    if (sessionId && transports.has(sessionId)) {
+      await transports.get(sessionId)!.handleRequest(req, res, req.body);
+      return;
+    }
+
+    if (req.method !== "POST") {
+      res.status(404).json({ error: "Session not found" });
+      return;
+    }
+
+    const transport = new StreamableHTTPServerTransport({
+      sessionIdGenerator: () => randomUUID(),
+      onsessioninitialized: (id) => {
+        transports.set(id, transport);
+        console.error(`[SESSION] created: ${id} (total: ${transports.size})`);
+      },
+    });
+
+    transport.onclose = () => {
+      if (transport.sessionId) {
+        transports.delete(transport.sessionId);
+        console.error(`[SESSION] closed: ${transport.sessionId} (total: ${transports.size})`);
+      }
+    };
+
+    await server.connect(transport);
+    await transport.handleRequest(req, res, req.body);
+  };
+
+  app.get("/healthz", (_, res) => res.json({ status: "ok", sessions: transports.size }));
+  app.all(MCP_PATH, handleMcp);
+
+  app.listen(PORT, () => {
+    console.error(`Korea Stock MCP Server running on HTTP port ${PORT} at ${MCP_PATH}`);
+  });
+}
+
+async function main() {
+  if (process.env.TRANSPORT === "http") {
+    await startHttp();
+  } else {
+    await startStdio();
+  }
 }
 
 main().catch((error) => {
