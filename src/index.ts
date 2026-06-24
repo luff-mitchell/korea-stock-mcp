@@ -201,7 +201,7 @@ async function startHttp() {
 
   const transports = new Map<string, StreamableHTTPServerTransport>();
 
-  const handleMcp = async (req: express.Request, res: express.Response) => {
+  const handleMcp = async (req: any, res: any) => {
     const sessionId = req.headers["mcp-session-id"] as string | undefined;
 
     if (sessionId && transports.has(sessionId)) {
